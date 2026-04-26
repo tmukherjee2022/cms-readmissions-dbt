@@ -31,6 +31,12 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   cms_databricks:
-    # Config indicated by + and applies to all files under models/example/
-    example:
+    # Staging: views over raw sources. Cheap to recompute.
+    staging:
       +materialized: view
+    # Intermediate: tables, since they're often joined and reused.
+    intermediate:
+      +materialized: table
+    # Marts: tables, queried directly by downstream consumers.
+    marts:
+      +materialized: table
