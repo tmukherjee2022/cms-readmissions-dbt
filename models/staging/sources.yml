@@ -1,0 +1,61 @@
+version: 2
+
+sources:
+  - name: hrrp_raw
+    description: >
+      Raw landing zone for CMS source files. Three datasets cover the full
+      Quality-domain readmissions analysis: HRRP outcome metrics, IPSF
+      payment-policy parameters, and Hospital General Information demographic
+      and quality scores. All tables loaded via Databricks UI from CMS
+      public data files. Treated as immutable source-of-truth; downstream
+      models cast types and apply business logic.
+    catalog: workspace
+    schema: hrrp_raw
+
+    tables:
+      - name: raw_hospital_readmissions
+        description: >
+          CMS Hospital Readmissions Reduction Program (HRRP) FY 2026 file.
+          Provider × measure grain. Contains excess readmission ratios for
+          six conditions (heart attack, heart failure, pneumonia, COPD,
+          hip/knee replacement, CABG) per Medicare-participating hospital.
+          Source of the target metric for the entire dataflow.
+        columns:
+          - name: "Facility ID"
+            description: "CMS Certification Number (CCN). Hospital identifier."
+          - name: "Measure Name"
+            description: "Six-value enum representing the HRRP condition. Examples: READM-30-AMI-HRRP, READM-30-HF-HRRP."
+          - name: "Excess Readmission Ratio"
+            description: "Hospital's actual readmission rate divided by expected. Greater than 1.0 means worse than peer average."
+
+      - name: raw_providers
+        description: >
+          CMS IPPS (Inpatient Prospective Payment System) Impact File / IPSF.
+          Longitudinal payment-policy parameters per provider per fiscal year.
+          ~1.18M rows across ~70K providers and ~9.8K distinct fiscal year
+          start dates. Includes payment adjustments (HRR, VBP), wage indices,
+          DSH/IME ratios, and pass-through amounts. Filtered to hospitals
+          and recent fiscal years in staging.
+        columns:
+          - name: providerCcn
+            description: "CMS Certification Number. Joins to HRRP and Hospital General Information."
+          - name: providerType
+            description: "Provider category. Filter to hospital types only in staging."
+          - name: fiscalYearBeginDate
+            description: "Provider-specific fiscal year start. Sentinels 19000101 and 20610701 indicate unknown / not-terminated."
+
+      - name: raw_admissions
+        description: >
+          CMS Hospital General Information file. Despite the name, contains
+          hospital-level metadata and quality scoring, not admission events.
+          One row per Medicare-certified hospital. Provides demographic
+          attributes (name, address, ownership type) and quality scores
+          across five measure families: Mortality, Safety, Readmissions,
+          Patient Experience, Timely & Effective Care.
+        columns:
+          - name: "Facility ID"
+            description: "CMS Certification Number (CCN). Joins to other sources."
+          - name: "Hospital overall rating"
+            description: "1-5 star rating from CMS. String type because 'Not Available' values exist."
+          - name: "Hospital Type"
+            description: "Acute Care, Critical Access, Childrens, Psychiatric, etc."
