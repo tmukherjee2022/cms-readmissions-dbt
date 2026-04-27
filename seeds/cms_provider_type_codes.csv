@@ -1,0 +1,22 @@
+provider_type_code,provider_type_label,category,is_hrrp_eligible
+00,Short-term Acute Care Hospital,Hospital,true
+01,Hospital,Hospital,false
+02,Long-term Care Hospital,Hospital,false
+03,Religious Non-medical Health Care Institution,Hospital,false
+04,Critical Access Hospital,Hospital,false
+05,Childrens Hospital,Hospital,false
+06,Cancer Hospital,Hospital,false
+07,Rehabilitation Hospital,Hospital,false
+08,Psychiatric Hospital,Hospital,false
+14,Indian Health Service Hospital,Hospital,false
+15,Other Hospital,Hospital,false
+16,Veterans Affairs Hospital,Hospital,false
+17,Tribal Hospital,Hospital,false
+33,Other,Other,false
+35,Other Specialty Hospital,Hospital,false
+36,Skilled Nursing Facility,SNF,false
+37,Other Skilled Nursing,SNF,false
+38,Nursing Facility,SNF,false
+49,Home Health Agency,HHA,false
+50,Hospice,Hospice,false
+51,Comprehensive Outpatient Rehabilitation Facility,CORF,false
