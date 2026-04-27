@@ -40,3 +40,6 @@ models:
     marts:
       +materialized: table
       +schema: hrrp_marts
+seeds:
+  cms_databricks:
+    +schema: hrrp_seeds
