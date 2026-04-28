@@ -1,0 +1,100 @@
+version: 2
+
+models:
+  - name: stg_hrrp_metrics
+    description: >
+      Staging model for CMS HRRP outcome metrics. Provider × measure grain.
+      Cleans column names from CMS Title Case to snake_case, casts numeric
+      strings to proper types handling 'Not Available' sentinels.
+    columns:
+      - name: facility_id
+        description: "CMS Certification Number (CCN). Joins to other CMS sources."
+        data_tests:
+          - not_null
+
+      - name: measure_name
+        description: "Six-value enum of HRRP condition measures."
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'READM-30-AMI-HRRP'
+                - 'READM-30-HF-HRRP'
+                - 'READM-30-PN-HRRP'
+                - 'READM-30-COPD-HRRP'
+                - 'READM-30-HIP-KNEE-HRRP'
+                - 'READM-30-CABG-HRRP'
+
+    # Composite uniqueness test — grain is (facility_id, measure_name)
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - facility_id
+            - measure_name
+
+
+  - name: stg_admissions
+    description: >
+      Staging model for CMS Hospital General Information. One row per
+      HRRP-eligible civilian hospital (excludes federal facilities — VA and
+      DoD — which are out of HRRP's scope). Demographic attributes and quality
+      scores. Filter applied in staging for consistency with stg_providers.
+    columns:
+      - name: facility_id
+        description: "CMS Certification Number (CCN)."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: facility_name
+        description: "Hospital name."
+        data_tests:
+          - not_null
+
+      - name: state_code
+        description: "Two-letter US state code."
+        data_tests:
+          - not_null
+
+      - name: hospital_ownership
+        description: "Ownership category (Government, Proprietary, Voluntary, etc.)"
+        data_tests:
+          - accepted_values:
+              values:
+                - 'Government - Federal'
+                - 'Government - Hospital District or Authority'
+                - 'Government - Local'
+                - 'Government - State'
+                - 'Proprietary'
+                - 'Voluntary non-profit - Church'
+                - 'Voluntary non-profit - Other'
+                - 'Voluntary non-profit - Private'
+                - 'Tribal'
+                - 'Physician'
+                
+              
+
+
+  - name: stg_providers
+    description: >
+      Staging model for CMS IPSF (IPPS Impact File). One row per HRRP-eligible
+      hospital, current fiscal year only. Filtered via seed JOIN and
+      ROW_NUMBER() dedupe.
+    columns:
+      - name: provider_ccn
+        description: "CMS Certification Number. Primary identifier."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: state_code
+        description: "Two-letter US state code (numeric in IPSF, kept as STRING)."
+        data_tests:
+          - not_null
+
+      - name: provider_type_code
+        description: "CMS provider type. Should be only '00' after HRRP-eligibility filter."
+        data_tests:
+          - accepted_values:
+              values:
+                - '00'

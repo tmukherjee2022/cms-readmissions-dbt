@@ -95,6 +95,14 @@ cleaned AS (
         `TE Group Footnote`                                                   AS te_group_footnote
 
     FROM source
+    -- HRRP scope filter: exclude federal facilities. VA and DoD hospitals
+    -- appear in Hospital General Information for completeness but are not
+    -- HRRP-eligible (they operate under separate quality reporting frameworks).
+    -- Filtering at staging keeps downstream models clean and consistent
+    -- with stg_providers' provider_type filter.
+    WHERE `Hospital Ownership` NOT IN (
+        'Department of Defense',
+        'Veterans Health Administration'
+    )
 )
-
 SELECT * FROM cleaned
