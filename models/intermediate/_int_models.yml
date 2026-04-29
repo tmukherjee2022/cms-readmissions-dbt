@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: int_providers_enriched
+    description: >
+      Provider spine for the HRRP analysis. One row per hospital with at
+      least one HRRP measure published. Joins financial attributes (IPSF),
+      demographic attributes (Hospital General Information), and rolled-up
+      HRRP outcome metrics. Hospitals missing IPSF or admissions matches
+      are surfaced via boolean flag columns rather than dropped.
+
+      Critical design choice: spine is rolled-up stg_hrrp_metrics (not
+      stg_providers) because the project's central question is how HRRP
+      outcomes relate to provider attributes. Using HRRP as spine
+      maximizes outcome coverage; ~47% of HRRP hospitals lack IPSF
+      financial data due to differences between HRRP eligibility and IPPS
+      payment-system participation.
+    columns:
+      - name: facility_id
+        description: "CMS Certification Number (CCN). Primary identifier; joins to dim_providers in the marts layer. Stored as BIGINT."
+
+      - name: facility_name
+        description: "Hospital display name from CMS Hospital General Information."
+
+      - name: state_code
+        description: "Numeric CMS state code (e.g., '10' for Florida). Note: not the two-letter abbreviation. A dim_states seed mapping is a deferred polish item."
+
+      - name: hospital_type
+        description: "CMS hospital classification (Acute Care Hospitals, Critical Access, etc.)."
+
+      - name: hospital_ownership
+        description: "CMS ownership category (Government, Proprietary, Voluntary non-profit, etc.). Federal facilities (DoD, VA) excluded at staging because HRRP doesn't apply to them."
+
+      - name: bed_count
+        description: "Hospital bed capacity from IPSF. NULL for hospitals not in IPSF."
+
+      - name: avg_excess_readmission_ratio
+        description: >
+          Hospital-level average of excess readmission ratios across the six
+          HRRP measures (excluding NULLs). Values >1.0 indicate worse-than-
+          expected performance; <1.0 indicates better. The single most
+          important quality metric in the dataset.
+
+      - name: hrr_adjustment_factor
+        description: >
+          Medicare payment multiplier applied to this hospital under the
+          HRRP penalty schedule. Values <1.0 mean the hospital receives
+          reduced Medicare reimbursement due to excess readmissions.
+          The financial-side mirror of avg_excess_readmission_ratio.
+
+      - name: vbp_adjustment_factor
+        description: "Medicare Value-Based Purchasing payment adjustment. Independent quality program but related signal."
+
+      - name: missing_provider_data
+        description: >
+          TRUE if this hospital has no matching IPSF record (i.e., not in
+          our financial-policy data). Affects approximately 1,441 of 3,055
+          hospitals. Surfaced as flag rather than dropped so dashboards
+          can decide whether to filter or expose.
+
+      - name: missing_admissions_data
+        description: "TRUE if this hospital has no matching Hospital General Information record. Should be 0 in current data."
+
+  - name: int_readmissions_flagged
+    description: >
+      Patient-event-grain table with the HRRP conformance rule applied.
+      One row per admission event. Each row carries a boolean
+      is_readmission flag computed by the is_readmission macro.
+
+      Architecture showcase: the conformance rule (30-day window, exclude
+      planned cancer/transplant/rehab) lives in a single macro file
+      (macros/is_readmission.sql). This model just applies it. If the rule
+      changes, change one line in the macro; this model picks it up
+      automatically. Same pattern would work for any UPHS conformance
+      rule (encounter grouping, patient status, etc.).
+
+      Pattern: LAG() window function attaches each admission's prior
+      discharge date and metadata to the row, partitioned by patient.
+      Then the is_readmission macro evaluates the pair.
+    columns:
+      - name: admission_id
+        description: "Synthetic primary key per admission event."
+
+      - name: patient_id
+        description: "Synthetic patient identifier. In production, would be MRN or Epic patient_id."
+
+      - name: facility_id
+        description: "CMS CCN of the hospital where this admission occurred. Joins to dim_providers."
+
+      - name: admission_date
+        description: "Date the patient was admitted."
+
+      - name: discharge_date
+        description: "Date the patient was discharged."
+
+      - name: prior_discharge_date
+        description: "Discharge date of this patient's prior admission, if any. NULL for first admissions per patient."
+
+      - name: days_since_prior_discharge
+        description: "Days between prior discharge and current admission. NULL when no prior admission. Drives the readmission-window calculation."
+
+      - name: is_readmission
+        description: >
+          TRUE if this admission qualifies as a readmission under HRRP rules:
+          within 30 days of prior discharge AND not a planned cancer/transplant/
+          rehab admission. Computed by the is_readmission macro.
+
+      - name: admission_type
+        description: "'Emergency', 'Planned', etc. Drives the planned-admission exclusion in the conformance rule."
+
+      - name: diagnosis_category
+        description: "Clinical condition (Heart Failure, AMI, COPD, etc.). Maps to HRRP measure_code in fct_readmissions."

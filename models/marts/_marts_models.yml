@@ -1,0 +1,136 @@
+version: 2
+
+models:
+  - name: dim_providers
+    description: >
+      Provider dimension table. One row per HRRP-eligible hospital
+      (~3,055 rows). Thin SELECT over int_providers_enriched; no new
+      business logic added at this layer.
+
+      Use this dimension to JOIN provider attributes onto any fact table
+      via facility_id. Includes data quality flags (missing_provider_data,
+      missing_admissions_data) so dashboards can transparently surface
+      which hospitals have incomplete data.
+    columns:
+      - name: facility_id
+        description: "CMS CCN. Primary key (natural). JOIN target for fact tables."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: facility_name
+        description: "Hospital display name."
+        data_tests:
+          - not_null
+
+      - name: state_code
+        description: "Numeric CMS state code."
+
+      - name: hospital_type
+        description: "CMS hospital classification."
+
+      - name: hospital_ownership
+        description: "CMS ownership category."
+
+      - name: bed_count
+        description: "Bed capacity. NULL if hospital not in IPSF."
+
+      - name: overall_rating
+        description: "CMS Five-Star Quality Rating (1-5). NULL if not rated."
+
+      - name: avg_excess_readmission_ratio
+        description: "Average HRRP excess readmission ratio across measures. >1.0 is worse than expected."
+
+      - name: hrr_adjustment_factor
+        description: "Medicare payment multiplier under HRRP. <1.0 means hospital is being penalized."
+
+      - name: vbp_adjustment_factor
+        description: "Value-Based Purchasing adjustment factor."
+
+      - name: missing_provider_data
+        description: "TRUE if hospital lacks IPSF financial record."
+
+      - name: missing_admissions_data
+        description: "TRUE if hospital lacks Hospital General Information record."
+
+  - name: dim_conditions
+    description: >
+      HRRP measure-type dimension. Six rows, one per HRRP condition
+      (Heart Attack, Heart Failure, Pneumonia, COPD, Hip/Knee, CABG).
+
+      Built inline via UNION ALL rather than as a seed because the six
+      HRRP measures are stable, well-defined CMS categories. JOIN target
+      for fct_readmissions via measure_code.
+    columns:
+      - name: measure_code
+        description: "HRRP measure code (e.g., 'READM-30-HF-HRRP')."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: condition_name
+        description: "Human-readable condition name for dashboards."
+        data_tests:
+          - not_null
+
+      - name: condition_category
+        description: "Clinical grouping: Cardiac, Respiratory, or Surgical."
+
+      - name: sort_order
+        description: "Display order for dashboards."
+
+  - name: fct_readmissions
+    description: >
+      Fact table for hospital readmission events. One row per patient
+      admission event. Each row carries the HRRP conformance flag
+      (is_readmission) and foreign keys to dim_providers (via facility_id)
+      and dim_conditions (via measure_code).
+
+      Synthetic data caveat: the underlying patient events are synthesized
+      because CMS doesn't publish patient-level data publicly. The seed
+      (raw_readmissions_events) is calibrated for rule demonstration, not
+      statistical realism. In UPHS production, this fact table would be
+      built from Epic admission events; the macro and model layers above
+      remain identical.
+    columns:
+      - name: admission_id
+        description: "Primary key per admission event."
+        data_tests:
+          - unique
+          - not_null
+
+      - name: patient_id
+        description: "Patient identifier (synthetic). In production, MRN or Epic patient_id."
+
+      - name: facility_id
+        description: "Foreign key to dim_providers."
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_providers')
+              field: facility_id
+
+      - name: measure_code
+        description: "Foreign key to dim_conditions. NULL for non-HRRP diagnosis categories (Surgical Complication, Cancer Treatment, Rehabilitation)."
+        data_tests:
+          - relationships:
+              to: ref('dim_conditions')
+              field: measure_code
+              config:
+                severity: warn
+
+      - name: admission_date
+        description: "Date of admission."
+        data_tests:
+          - not_null
+
+      - name: discharge_date
+        description: "Date of discharge."
+
+      - name: days_since_prior_discharge
+        description: "Days between this patient's prior discharge and current admission. NULL if no prior admission."
+
+      - name: is_readmission
+        description: >
+          The HRRP conformance flag. TRUE if this admission qualifies as a
+          readmission per the is_readmission macro rules.
