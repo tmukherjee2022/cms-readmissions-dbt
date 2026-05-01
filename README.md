@@ -117,39 +117,6 @@ dbt build          # run + test the full pipeline
 dbt docs generate && dbt docs serve   # browse the lineage graph
 ```
 
-## Project Structure
-cms_databricks/
-├── dbt_project.yml             # Project config; routes models to schemas
-├── profiles.yml                # NOT committed; lives at ~/.dbt/
-├── packages.yml                # dbt_utils dependency
-├── data_raw/                   # Local copies of source CSVs (gitignored)
-├── docs/
-│   └── screenshots/            # Lineage graph + dashboard previews
-├── macros/
-│   ├── generate_schema_name.sql  # Override schema prefixing
-│   ├── is_readmission.sql        # The HRRP conformance rule
-│   └── safe_cast.sql             # Type-cast helpers for CMS sentinels
-├── models/
-│   ├── _project_overview.md      # dbt docs landing page
-│   ├── staging/
-│   │   ├── sources.yml
-│   │   ├── _stg_models.yml       # Tests + descriptions
-│   │   ├── stg_hrrp_metrics.sql
-│   │   ├── stg_admissions.sql
-│   │   └── stg_providers.sql
-│   ├── intermediate/
-│   │   ├── _int_models.yml
-│   │   ├── int_providers_enriched.sql
-│   │   └── int_readmissions_flagged.sql
-│   └── marts/
-│       ├── _marts_models.yml
-│       ├── dim_providers.sql
-│       ├── dim_conditions.sql
-│       └── fct_readmissions.sql
-└── seeds/
-├── cms_provider_type_codes.csv  # HRRP eligibility taxonomy
-└── raw_readmissions_events.csv  # Synthesized patient events
-
 ## Caveat — Demo on Free Tier
 
 This project runs on Databricks Community Edition, which means a few things
