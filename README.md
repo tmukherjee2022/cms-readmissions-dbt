@@ -5,159 +5,166 @@ Reduction Program (HRRP) data, demonstrating source-to-marts transformation
 patterns on Databricks. Built as a portable simulation of the architecture
 patterns appropriate for hospital-system Quality-domain analytics.
 
----
+## What this project does
 
-## Objective
+Takes three CMS public datasets (Hospital Readmissions Reduction Program metrics,
+Hospital General Information, and Inpatient Prospective Payment System Final
+Rule provider files) plus a synthesized seed of patient admission events, and
+transforms them through a staging → intermediate → marts pipeline into three
+analysis-ready tables that answer:
 
-Demonstrate end-to-end analytics engineering on hospital readmissions data:
+- Which providers carry HRRP excess-readmission ratios above 1.0, and what are
+  their attributes (region, ownership, bed size, teaching status)?
+- For a simulated patient population, what is the 30-day readmission rate by
+  diagnosis category, after applying the HRRP planned-admission exclusion rule?
+- How does the simulated readmission pattern compare against the real CMS
+  excess-readmission ratios for the same condition cohorts?
 
-- **Three CMS public sources** ingested into Databricks
-- **dbt staging layer** that absorbs CMS data quirks (sentinel values, mixed
-  types, longitudinal records) and emits clean, typed, snake_case data
-- **Marts layer** answering the executive question: which hospitals have
-  abnormal readmission rates, what conditions drive them, and what
-  financial penalties do they face under HRRP?
-- **Conformance rule** for the 30-day readmission definition, encoded as
-  a macro and enforced via tests
-- **Lineage graph** rendered through `dbt docs` so reviewers can trace
-  any final metric back to its source
+The conformance rule (30-day window, exclude planned cancer/transplant/rehab
+admissions) lives in `macros/is_readmission.sql` and is applied at the
+intermediate layer, not in the marts. Marts are thin projections.
 
-The project is intentionally aligned to a Quality-domain pilot pattern:
-operational quality outcomes (readmission rates from HRRP) joined to
-financial consequences (HRR payment adjustments from IPSF) at the
-provider level.
+## Dataflow
 
----
+```mermaid
+flowchart LR
+    %% Sources
+    raw_hrrp[raw_hospital_readmissions]
+    raw_prov[raw_providers]
+    raw_adm[raw_admissions]
+    seed_events[(raw_readmissions_events<br/>seed)]
+
+    %% Staging
+    stg_hrrp[stg_hrrp_metrics]
+    stg_prov[stg_providers]
+    stg_adm[stg_admissions]
+
+    %% Intermediate
+    int_prov[int_providers_enriched]
+    int_readm[int_readmissions_flagged]
+
+    %% Marts
+    dim_prov[dim_providers]
+    dim_cond[dim_conditions]
+    fct_readm[fct_readmissions]
+
+    %% Edges
+    raw_hrrp --> stg_hrrp --> int_prov --> dim_prov
+    raw_prov --> stg_prov --> int_prov
+    raw_adm --> stg_adm --> int_prov
+    seed_events --> int_readm --> fct_readm
+    dim_prov --> fct_readm
+    dim_cond --> fct_readm
+
+    %% Macro callout
+    macro[[is_readmission macro]] -.applied at.-> int_readm
+
+    classDef raw fill:#fef3c7,stroke:#b45309,color:#78350f
+    classDef stg fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
+    classDef int fill:#e0e7ff,stroke:#4338ca,color:#312e81
+    classDef mart fill:#dcfce7,stroke:#15803d,color:#14532d
+    classDef macro_style fill:#fce7f3,stroke:#be185d,color:#831843
+
+    class raw_hrrp,raw_prov,raw_adm,seed_events raw
+    class stg_hrrp,stg_prov,stg_adm stg
+    class int_prov,int_readm int
+    class dim_prov,dim_cond,fct_readm mart
+    class macro macro_style
+```
+
+The conformance rule (30-day readmission window, excluding planned cancer,
+transplant, and rehab admissions) lives in `macros/is_readmission.sql` and is
+applied at the intermediate layer. Marts are thin projections that consume
+already-flagged data — separation of "rule enforcement" from "presentation"
+is intentional.
 
 ## Data Schema
 
-### Sources (`workspace.hrrp_raw`)
+**Sources** (CMS public data, loaded as Databricks tables):
 
-| Table | Source File | Grain | Rows |
-|---|---|---|---|
-| `raw_hospital_readmissions` | CMS HRRP FY 2026 | provider × measure | ~18K |
-| `raw_providers` | CMS IPPS Impact File (IPSF) | provider × fiscal year | ~1.18M |
-| `raw_admissions` | CMS Hospital General Information | one per hospital | ~5.4K |
-
-### Seeds (`workspace.hrrp_seeds`)
-
-| Table | Purpose |
-|---|---|
-| `cms_provider_type_codes` | CMS two-character provider type taxonomy with HRRP eligibility flags. Encodes a business rule as data so it's auditable and changeable without touching SQL. |
-
-### Staging (`workspace.hrrp_staging`)
-
-Materialized as views. One model per source. Job: clean column names, cast
-types, handle CMS sentinel values, assert grain.
-
-| Model | Grain | Notes |
+| Table | Grain | Row count |
 |---|---|---|
-| `stg_hrrp_metrics` | provider × measure | Renames Title-Case to snake_case; casts numeric strings to INT/DOUBLE handling 'Not Available' sentinels |
-| `stg_admissions` | one row per hospital | Yes/No → BOOLEAN; quality scores cast via `safe_cast_int_string` macro |
-| `stg_providers` | one HRRP-eligible hospital, current FY | Filters via JOIN to seed (`is_hrrp_eligible = true`); deduplicates with `ROW_NUMBER() OVER (PARTITION BY providerCcn ORDER BY fiscalYearBeginDate DESC)`; converts BIGINT YYYYMMDD dates to DATE |
+| `raw_hospital_readmissions` | one row per provider × condition × FY | ~19,500 |
+| `raw_providers` | one row per provider × FY × record version | ~1.18M |
+| `raw_admissions` | one row per provider | ~5,400 |
+| `raw_readmissions_events` (seed) | one row per simulated admission event | ~3,000 |
 
-### Marts (`workspace.hrrp_marts`) — *in progress*
+**Marts:**
 
-| Model | Grain | Layer |
+| Table | Grain | Purpose |
 |---|---|---|
-| `int_providers_enriched` | one row per hospital | Intermediate; joins three staging tables |
-| `int_readmissions_flagged` | one row per admission event | Intermediate; applies `is_readmission()` macro |
-| `dim_providers` | one row per hospital | Mart; demographic + financial spine |
-| `dim_conditions` | one row per HRRP measure type | Mart; six rows for now |
-| `fct_readmissions` | one row per readmission event | Mart; references both dims |
-
----
-
-## Dataflow
-Sources (raw_)              Staging (stg_, views)         Intermediate (int_, tables)        Marts (dim_/fct_, tables)
-═══════════════              ════════════════════           ═══════════════════════              ═══════════════════════
-raw_hospital_readmissions ─► stg_hrrp_metrics ─────────────►                                ┌─► dim_providers
-raw_providers ─────────────► stg_providers ─────────────────► int_providers_enriched ──────┤
-raw_admissions ────────────► stg_admissions ────────────────►                                └─► dim_conditions
-raw_readmissions (seed) ───► stg_readmissions ──────────────► int_readmissions_flagged ────► fct_readmissions
-(applies is_readmission macro)
-┌─────────────────────┐
-                                                                                        │  Executive Dashboard │
-                                                                                        │  (Databricks SQL)    │
-                                                                                        └─────────────────────┘
-The conformance rule (30-day readmission window, excluding planned cancer/
-transplant/rehab admissions) lives in a macro applied at the `int_*` layer.
-Marts are thin projections that consume already-flagged data — separation
-of "rule enforcement" from "presentation" is intentional.
-
----
+| `dim_providers` | one row per HRRP-eligible hospital | Provider attributes + most-recent HRRP rollup |
+| `dim_conditions` | one row per HRRP measure code | Condition lookup with display names |
+| `fct_readmissions` | one row per simulated index admission | Index-admission grain with `is_readmission` flag and condition/provider FKs |
 
 ## Local Setup
 
-Requires Python 3.11+ and `uv`.
-
 ```bash
-# Clone and enter the project
 git clone git@github.com:tmukherjee2022/cms-readmissions-dbt.git
 cd cms-readmissions-dbt
-
-# Create venv and install dbt
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install dbt-databricks
-
-# Configure profiles.yml at ~/.dbt/profiles.yml with your Databricks
-# workspace host, HTTP path, and PAT. Catalog should be `workspace`,
-# schema can be your dev identifier (e.g. `dbt_yourname`).
-
-# Verify connection
-dbt debug
-
-# Load seed and run staging models
-dbt seed
-dbt run --select staging
+python3 -m venv .venv && source .venv/bin/activate
+pip install dbt-core dbt-databricks
+dbt deps
 ```
 
----
+Configure `~/.dbt/profiles.yml` with your Databricks workspace host, HTTP path,
+and personal access token. Then:
+
+```bash
+dbt debug          # verify connection
+dbt seed           # load the synthesized event seed and CMS code lookup
+dbt build          # run + test the full pipeline
+dbt docs generate && dbt docs serve   # browse the lineage graph
+```
 
 ## Project Structure
 cms_databricks/
 ├── dbt_project.yml             # Project config; routes models to schemas
 ├── profiles.yml                # NOT committed; lives at ~/.dbt/
+├── packages.yml                # dbt_utils dependency
 ├── data_raw/                   # Local copies of source CSVs (gitignored)
+├── docs/
+│   └── screenshots/            # Lineage graph + dashboard previews
 ├── macros/
-│   ├── generate_schema_name.sql  # Override default schema prefixing
-│   └── safe_cast.sql             # Reusable type-cast helpers for CMS sentinels
+│   ├── generate_schema_name.sql  # Override schema prefixing
+│   ├── is_readmission.sql        # The HRRP conformance rule
+│   └── safe_cast.sql             # Type-cast helpers for CMS sentinels
 ├── models/
+│   ├── _project_overview.md      # dbt docs landing page
 │   ├── staging/
-│   │   ├── sources.yml           # Source declarations
+│   │   ├── sources.yml
+│   │   ├── _stg_models.yml       # Tests + descriptions
 │   │   ├── stg_hrrp_metrics.sql
 │   │   ├── stg_admissions.sql
 │   │   └── stg_providers.sql
-│   ├── intermediate/             # In progress
-│   └── marts/                    # In progress
+│   ├── intermediate/
+│   │   ├── _int_models.yml
+│   │   ├── int_providers_enriched.sql
+│   │   └── int_readmissions_flagged.sql
+│   └── marts/
+│       ├── _marts_models.yml
+│       ├── dim_providers.sql
+│       ├── dim_conditions.sql
+│       └── fct_readmissions.sql
 └── seeds/
-└── cms_provider_type_codes.csv  # CMS provider type taxonomy
-
----
+├── cms_provider_type_codes.csv  # HRRP eligibility taxonomy
+└── raw_readmissions_events.csv  # Synthesized patient events
 
 ## Caveat — Demo on Free Tier
 
-This project runs on Databricks Community Edition. Some choices reflect
-free-tier constraints rather than what production architecture would look
-like in a paid environment:
+This project runs on Databricks Community Edition, which means a few things
+the reader should know:
 
-- **Catalog:** Single `workspace` catalog. Production would use Unity Catalog
-  with separate `raw`, `prepared`, `curated` catalogs and ACLs scoped to
-  curated for downstream consumers.
-- **Orchestration:** dbt runs locally rather than via Databricks Workflows.
-  Production would orchestrate `dbt build` as a multi-task workflow with
-  retry logic, failure routing, and lineage propagation to DataHub.
-- **Ingestion:** CSVs uploaded via UI. Production would use Databricks Auto
-  Loader for incremental ingestion or Delta Live Tables for declarative
-  pipelines with built-in expectations.
-- **Patient events:** HIPAA-protected admission data is synthesized at the
-  seed layer rather than sourced from a real EHR. Production would integrate
-  Epic/Clarity event streams.
-- **Compute:** 2X-Small Serverless warehouse with aggressive auto-stop.
-  Production would right-size compute to actual workload concurrency.
+- The Unity Catalog feature set isn't available — schemas are flat rather
+  than catalog-prefixed, and row-level access controls aren't demonstrated here.
+- Cluster size is small; query performance is not representative of a paid
+  workspace.
+- The `raw_readmissions_events` seed is synthesized rather than sourced from
+  a real claims feed. The synthesis is plausible (provider IDs match the real
+  CMS provider universe; admission dates and diagnosis categories follow
+  realistic distributions) but it is not real patient data.
 
-The architectural patterns demonstrated here — staging-as-translation-layer,
-seed-as-business-rule, conformance rules as macros, schema-as-medallion —
-are the same patterns that scale to production. Free-tier vs. paid is an
-implementation choice; the architecture is the asset.
+The patterns here scale unchanged: staging absorbs source quirks, seeds encode
+business rules as data, macros hold conformance logic, and schemas form a
+medallion. Moving from Community Edition to a paid Databricks workspace is an
+implementation change, not an architecture change.

@@ -1,6 +1,5 @@
--- =======================================================================
 -- dim_conditions
--- =======================================================================
+-- 
 -- HRRP measure-type dimension. Six rows, one per HRRP condition.
 --
 -- Grain: one row per measure_code.
@@ -9,10 +8,6 @@
 -- HRRP measures are stable, well-defined CMS categories. Inline approach
 -- keeps the canonical list visible in one place. If CMS adds a 7th measure
 -- type in 2027 (rare but possible), one new line gets added here.
---
--- This dimension is the JOIN target for fct_readmissions. The measure_code
--- column matches the measure_name field in stg_hrrp_metrics.
--- =======================================================================
 
 WITH conditions AS (
     SELECT 'READM-30-AMI-HRRP'         AS measure_code,
