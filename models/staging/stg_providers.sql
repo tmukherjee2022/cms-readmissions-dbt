@@ -1,6 +1,3 @@
--- =======================================================================
--- stg_providers
--- =======================================================================
 -- Staging model for the CMS IPPS Impact File (IPSF).
 --
 -- Grain: one row per HRRP-eligible hospital, current fiscal year only.
@@ -12,26 +9,19 @@
 --   3. Keeps the most recent record per provider via ROW_NUMBER()
 --   4. Casts BIGINT-as-date columns to proper DATE
 --   5. Renames camelCase to snake_case
---
--- Expected output: ~3,000 rows (one per Short-term Acute Care Hospital).
--- =======================================================================
+
 
 WITH source AS (
     SELECT * FROM {{ source('hrrp_raw', 'raw_providers') }}
 ),
 
 eligible_provider_types AS (
-    -- Pull the list of HRRP-eligible provider type codes from the seed.
-    -- Encoding this as a seed (vs. inline WHERE clause) means the business
-    -- rule is auditable and changeable without touching SQL.
     SELECT provider_type_code
     FROM {{ ref('cms_provider_type_codes') }}
     WHERE is_hrrp_eligible = true
 ),
 
 filtered AS (
-    -- Apply the two filters: provider type and fiscal year range.
-    -- Sentinel dates 19000101 and 20610701 are excluded by the BETWEEN.
     SELECT *
     FROM source
     WHERE providerType IN (SELECT provider_type_code FROM eligible_provider_types)
@@ -39,9 +29,6 @@ filtered AS (
 ),
 
 ranked AS (
-    -- For each provider, rank fiscal year records newest-first.
-    -- Window function: ROW_NUMBER() resets per partition (provider) and
-    -- assigns 1 to the most recent FY record, 2 to the next, etc.
     SELECT
         *,
         ROW_NUMBER() OVER (
@@ -52,7 +39,6 @@ ranked AS (
 ),
 
 most_recent AS (
-    -- Keep only the newest record per provider.
     SELECT * FROM ranked WHERE fy_rank = 1
 ),
 
@@ -114,14 +100,11 @@ cleaned AS (
         passThroughTotalAmount                   AS pass_through_total,
 
         -- ---- Dates: BIGINT YYYYMMDD format → DATE ----
-        -- Pattern: cast int to string, then parse with date format.
-        -- Databricks supports to_date(string, format) for explicit parsing.
         to_date(CAST(fiscalYearBeginDate AS STRING), 'yyyyMMdd') AS fiscal_year_begin_date,
         to_date(CAST(fiscalYearEndDate AS STRING), 'yyyyMMdd')   AS fiscal_year_end_date,
         to_date(CAST(effectiveDate AS STRING), 'yyyyMMdd')       AS effective_date,
         to_date(CAST(exportDate AS STRING), 'yyyyMMdd')          AS export_date,
 
-        -- ---- Termination date with sentinel handling ----
         -- 20610701 = "not terminated" sentinel; convert to NULL.
         CASE
             WHEN terminationDate = 20610701 THEN NULL

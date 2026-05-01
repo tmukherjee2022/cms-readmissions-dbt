@@ -71,9 +71,6 @@ models:
                 - 'Voluntary non-profit - Private'
                 - 'Tribal'
                 - 'Physician'
-                
-              
-
 
   - name: stg_providers
     description: >

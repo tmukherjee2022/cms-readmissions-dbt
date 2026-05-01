@@ -1,8 +1,4 @@
--- =======================================================================
 -- fct_readmissions
--- =======================================================================
--- Fact table for hospital readmission events.
---
 -- Grain: one row per patient admission event. Each row represents an
 -- admission that may or may not be flagged as a readmission under HRRP rules.
 --
@@ -10,11 +6,9 @@
 --   facility_id  -> dim_providers.facility_id
 --   measure_code -> dim_conditions.measure_code
 --
--- Design note: diagnosis_category from the seed is mapped to HRRP
--- measure_code inline via CASE. In production, this mapping would live in a
+-- Design note: In production, this mapping would live in a
 -- separate seed (e.g., diagnosis_to_measure_mapping.csv) for auditability.
 -- Inline mapping is acceptable for a six-value lookup demo.
--- =======================================================================
 
 WITH source AS (
     SELECT * FROM {{ ref('int_readmissions_flagged') }}

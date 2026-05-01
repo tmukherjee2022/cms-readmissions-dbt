@@ -1,20 +1,16 @@
 # =========================================================
 # dbt artifacts
 # =========================================================
-# `target/` is where dbt writes compiled SQL, run results, and the docs site.
-# Regenerated on every `dbt run` / `dbt compile`. Never commit.
+
 target/
 
-# `dbt_packages/` holds installed dbt packages (like dbt_utils).
-# Reproducible from `packages.yml` via `dbt deps`. Never commit.
+#
 dbt_packages/
 
-# `logs/` is where dbt writes verbose logs from every command.
-# Useful locally for debugging, but huge and machine-specific. Never commit.
+
 logs/
 
-# Per-developer dbt config overrides.
-# If you create a profiles.yml inside the project (don't), this catches it.
+
 profiles.yml
 
 # =========================================================
@@ -61,9 +57,9 @@ htmlcov/
 # =========================================================
 # Data files (CMS / HRRP raw data)
 # =========================================================
-# Raw CSVs are large; we load them into Databricks directly.
+
 *.csv
 *.tsv
 *.parquet
-# Exception: seed files SHOULD be committed. The `!` un-ignores them.
+
 !seeds/**/*.csv

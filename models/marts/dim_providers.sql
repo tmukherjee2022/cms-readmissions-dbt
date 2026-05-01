@@ -6,10 +6,7 @@
 -- Grain: one row per facility_id (natural key from CMS CCN system).
 --
 -- Design: thin SELECT over int_providers_enriched. No new business logic;
--- dimension exists to provide stable, queryable provider attributes for
--- joining to fact tables. Includes data quality flags so dashboards can
--- expose which hospitals have incomplete data.
--- =======================================================================
+
 
 WITH source AS (
     SELECT * FROM {{ ref('int_providers_enriched') }}
@@ -43,7 +40,7 @@ renamed AS (
         case_mix_index,
         medicaid_ratio,
 
-        -- ---- Data quality flags (for dashboard transparency) ----
+        -- ---- Data quality flags  ----
         missing_provider_data,
         missing_admissions_data
 
