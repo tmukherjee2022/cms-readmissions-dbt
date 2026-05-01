@@ -1,0 +1,1 @@
+SELECT * FROM {{ ref('fct_readmissions') }} WHERE is_readmission = true AND days_since_prior_discharge > 30
